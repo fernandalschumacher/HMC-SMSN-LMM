@@ -26,8 +26,7 @@ ggplot(gendat, aes(x = x, y = y, group = ind)) + geom_line() +
 ##load libraries
 library(rstan, quietly = T)
 library(shinystan)
-options(mc.cores = parallel::detectCores())
-rstan_options(auto_write = TRUE)
+rstan_options(auto_write = TRUE, threads_per_chain = 4)
 
 N <- nrow(gendat)
 n <- n_distinct(gendat$ind)
@@ -44,7 +43,7 @@ tbayes <- try(stan(file='lmm-AR1-ST.stan',
                    data = list(N=N, n=n, l=l, q1 = q1, njvec =njvec,y=gendat$y,
                                x=x,z=z, timevar = gendat$time,ind = gendat$indnum,
                                sdLP = 2), 
-                   thin = 1, chains = 3, iter = 5000, warmup = 1000, 
+                   thin = 1, chains = 3, iter = 3000, warmup = 1000, 
                    seed = 9955, control = list(adapt_delta=.9)),
               silent = F)
 print(tbayes,par=c("beta","sigmae","phi1","D1","lambda","nu","lp__"), 
