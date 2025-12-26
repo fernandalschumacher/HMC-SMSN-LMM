@@ -68,11 +68,10 @@ transformed parameters {
 model {
   beta ~ normal(0,100);
   sigmae ~ student_t(4,0,5);
-  // 
   ddsqrt ~ student_t(4,0,5);
   Lcorr ~ lkj_corr_cholesky(2.0); // prior for cholesky factor of a correlation matrix
   to_vector(etavec) ~ std_normal();
-  nu ~ cauchy(0, 2.5);
+  nu ~ gamma(2, .2);//cauchy(0, 2.5);
   //
   lambda ~ normal(0,sdLP);
   //
