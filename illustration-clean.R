@@ -145,7 +145,7 @@ nbayes <- stan(file='lmm-AR1-N.stan',
                data = list(N=N, n=n, l=l, q1 = q1, njvec =njvec,y=gendat$y,
                            x=x,z=z, timevar = gendat$time,ind = gendat$indnum), 
                thin = 5, chains = 3, iter = 5000, warmup = 1000, 
-               seed = 9955, control = list(adapt_delta=.8))
+               seed = 9955, control = list(adapt_delta=.9))
 toc()
 print(nbayes,par=c("beta","sigmae","phi1","D1"), 
       probs = c(.025,.975), digits=3)
