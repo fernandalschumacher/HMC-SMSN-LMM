@@ -91,14 +91,39 @@ print(st_loo$loo)
 plot(st_loo$loo)
 print(st_loo$waic)
 
+###############################################################################
+# Fitting N-AR(1) for comparison
+tic()
+nbayes <- stan(file='lmm-AR1-N.stan', 
+               data = list(N=N, n=n, l=l, q1 = q1, njvec =njvec,y=gendat$y,
+                           x=x,z=z, timevar = gendat$time,ind = gendat$indnum), 
+               thin = 5, chains = 3, iter = 5000, warmup = 1000, 
+               seed = 9955, control = list(adapt_delta=.9))
+toc()
+print(nbayes,par=c("beta","sigmae","phi1","D1"), 
+      probs = c(.025,.975), digits=3)
+
+tic()
+normal_loo <- criteriaAR1(nbayes, data_list, distr = "sn")
+toc()
+plot(normal_loo$loo)
+
+# Comparing criteria for both models
+comp_loo <- loo_compare(list(st = st_loo$loo, norm = normal_loo$loo))
+print(comp_loo, simplify = FALSE)
+#
+comp_waic <- loo_compare(list(st = st_loo$waic, norm = normal_loo$waic))
+print(comp_waic, simplify = FALSE)
+
+###############################################################################
 ## Sensitivity analysis: changing prior distribution for nu
 tic()
 tbayes_nu <- stan(file='lmm-AR1-ST-nuprior.stan', 
-               data = list(N=N, n=n, l=l, q1 = q1, njvec =njvec,y=gendat$y,
-                           x=x,z=z, timevar = gendat$time, ind = gendat$indnum,
-                           sdLP = 2), #sd of lambda's prior 
-               thin = 5, chains = 3, iter = 5000, warmup = 1000, 
-               seed = 9955, control = list(adapt_delta=.95))
+                  data = list(N=N, n=n, l=l, q1 = q1, njvec =njvec,y=gendat$y,
+                              x=x,z=z, timevar = gendat$time, ind = gendat$indnum,
+                              sdLP = 2), #sd of lambda's prior 
+                  thin = 5, chains = 3, iter = 5000, warmup = 1000, 
+                  seed = 9955, control = list(adapt_delta=.95))
 toc()
 print(tbayes_nu,par=c("beta","sigmae","phi1","D1","lambda","nu"), 
       probs = c(.025,.975), digits=3)
@@ -126,42 +151,6 @@ ggplot(d, aes(x = values, fill = Model)) +
   ggtitle("Sensitivity of nu to Prior Choice") +
   theme_minimal() + facet_wrap(~param, scale = "free")
 
-# Computing criteria
-tic()
-st_nu_loo <- criteriaAR1(tbayes_nu, data_list, distr = "st")
-toc()
-print(st_nu_loo$loo)
-plot(st_nu_loo$loo)
-print(st_nu_loo$waic)
-#
-comp_loo <- loo_compare(list(st = st_loo$loo, st_nu = st_nu_loo$loo))
-print(comp_loo, simplify = FALSE)
-
-
-###############################################################################
-# Fitting N-AR(1) for comparison
-tic()
-nbayes <- stan(file='lmm-AR1-N.stan', 
-               data = list(N=N, n=n, l=l, q1 = q1, njvec =njvec,y=gendat$y,
-                           x=x,z=z, timevar = gendat$time,ind = gendat$indnum), 
-               thin = 5, chains = 3, iter = 5000, warmup = 1000, 
-               seed = 9955, control = list(adapt_delta=.9))
-toc()
-print(nbayes,par=c("beta","sigmae","phi1","D1"), 
-      probs = c(.025,.975), digits=3)
-
-tic()
-normal_loo <- criteriaAR1(nbayes, data_list, distr = "sn")
-toc()
-plot(normal_loo$loo)
-
-# Comparing criteria for both models
-comp_loo <- loo_compare(list(st = st_loo$loo, norm = normal_loo$loo))
-print(comp_loo, simplify = FALSE)
-#
-comp_waic <- loo_compare(list(st = st_loo$waic, norm = normal_loo$waic))
-print(comp_waic, simplify = FALSE)
-
 
 ###############################################################################
 # Fitting a frequentist AR(1)-ST-LMM for comparison
@@ -172,44 +161,4 @@ fit_EM <- smsn.lmm(data = gendat, formFixed = y~x, groupVar = 'ind',
 cbind(fit_EM$theta,fit_EM$std.error) %>% knitr::kable(digits = 3, format = 'simple')
 round(fit_EM$estimates$D,3)
 round(fit_EM$estimates$sigma2 %>% sqrt,3)
-
-###############################################################################
-# Extracting extra information from the original model
-library(posterior)
-library(bayesplot)
-
-target_pars <- c("beta\\[.*\\]", "sigmae", "phi1", "D1\\[.*\\]", "lambda\\[.*\\]", "nu")
-
-post_draws_all <- as_draws_array(tbayes)
-post_draws <- subset_draws(
-  post_draws_all, 
-  variable = target_pars, 
-  regex = TRUE
-)
-
-#print(variables(post_draws))
-
-summary_table <- summarise_draws(post_draws)
-print(summary_table, n = Inf)
-
-# **Trace Plots** (Visual check for chain mixing and convergence)
-color_scheme_set("mix-pink-blue") 
-mcmc_trace(
-  post_draws, 
-  pars = c("beta[1]", "sigmae", "phi1","lambda[1]"),
-  facet_args = list(ncol = 1, strip.position = "left")
-)
-
-mcmc_dens(
-  post_draws, 
-  pars = c("beta[1]", "beta[2]", "sigmae", "phi1", "D1[1,1]", "nu")
-) 
-
-mcmc_intervals(
-  post_draws, 
-  pars = c("D1[1,1]", "D1[1,2]", "D1[2,2]"),
-  prob = 0.5,
-  prob_outer = .95
-)
-
 
