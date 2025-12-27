@@ -1,0 +1,14 @@
+tictoc
+dplyr
+tidyr
+purrr
+ggplot2
+loo
+StanHeaders
+rstan
+posterior
+bayesplot
+HDInterval
+optimParallel
+skewlmm
+mvtnorm

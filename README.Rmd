@@ -1,0 +1,245 @@
+---
+title: "Supplementary Material: Bayesian estimation in scale mixture of skew-normal linear mixed models using Hamiltonian Monte Carlo"
+author: "Fernanda L Schumacher, Larissa A Matos, Pedro L Ramos, and   Francisco Louzada"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: '2'
+  html_document:
+    toc: true
+    toc_depth: 2
+    theme: united
+---
+
+```{r setup, include=F, echo=T, results='hide'}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, cache = TRUE)
+library(tictoc)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+library(loo)
+library(rstan)
+library(posterior)
+library(bayesplot)
+library(HDInterval)
+library(skewlmm)
+library(bayesplot)
+
+# Stan optimization
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+```
+
+## Introduction
+
+This document provides the full reproducible workflow for the simulation and estimation of the AR(1) Skew-t Linear Mixed Model (AR1-ST-LMM) discussed in the main text, in addition for comparisons with a Gaussian model and a brief sensitivity analysis for the degrees of freedom parameter $\nu$. All materials needed to reproduce this code are available at \url{https://github.com/fernandalschumacher/HMC-SMSN-LMM}.
+
+Stan is required for running this code. For information on installing Stan, please check
+\url{https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started#installation-of-rstan}.
+
+## Loading packages
+
+```{r packages, eval=F}
+library(tictoc)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+library(loo)
+library(rstan)
+library(posterior)
+library(bayesplot)
+library(HDInterval)
+library(skewlmm)
+library(bayesplot)
+```
+
+
+## Data Generation
+
+We generate a longitudinal dataset with $m=200$ subjects and $n_j=5$ observations per subject from an AR(1)-ST-LMM using the skewlmm package.
+
+```{r datgen}
+set.seed(955)
+nj1 <- 5 
+m <- 200 
+D1_true <- matrix(c(.5,.1,.1,1), ncol=2) 
+
+gendatList <- map(rep(nj1, m), function(nj) {
+  skewlmm::rsmsn.lmm(1:nj, cbind(1, 1:nj), cbind(1, 1:nj), 
+                     sigma2 = .25, D1 = D1_true, beta = c(1, 2), 
+                     lambda = c(1,3), depStruct = "ARp", 
+                     phi = .5, distr = 'st', nu = 6)
+})
+
+gendat <- bind_rows(gendatList, .id = "ind") %>%
+  mutate(indnum = as.numeric(ind)) %>%
+  arrange(indnum)
+
+# Visualization
+ggplot(gendat, aes(x = x, y = y, group = ind)) + 
+  geom_line(alpha = 0.3) +
+  stat_summary(aes(group = 1), geom = "line", fun = mean, col = "blue", size = 1.5) +
+  theme_minimal() + 
+  labs(title = "Simulated Individual Trajectories", x = "Time", y = "Response")
+```
+
+
+## AR(1)-ST-LMM Fitting using Stan
+
+### Setup Data for Stan
+```{r datinfo}
+N <- nrow(gendat)
+n <- n_distinct(gendat$ind)
+x_mat <- model.matrix(y ~ x, data = gendat)
+z_mat <- model.matrix(~ x, data = gendat)
+l_cols <- ncol(x_mat)
+q1_cols <- ncol(z_mat)
+njvec <- as.numeric(table(gendat$indnum))
+
+data_list_stan <- list(
+  y = gendat$y, x = x_mat, z = z_mat, 
+  timevar = gendat$time, indnum = gendat$indnum
+)
+```
+
+### Fitting the ST Model
+```{r fit1}
+tic("AR(1)-ST-LMM Fit")
+tbayes <- stan(file = 'lmm-AR1-ST.stan', 
+               data = list(N=N, n=n, l=l_cols, q1=q1_cols, njvec=njvec, 
+                           y=gendat$y, x=x_mat, z=z_mat, 
+                           timevar=gendat$time, ind=gendat$indnum, sdLP=2), 
+               thin = 5, chains = 3, iter = 5000, warmup = 1000, seed = 9955)
+toc()
+
+print(tbayes, pars=c("beta","sigmae","phi1","D1","lambda","nu"), probs=c(.025,.975), digits=3)
+
+mcmc_dens_chains(tbayes, pars = c("beta[1]","beta[2]"))+
+  geom_vline(xintercept = 0, linetype = "dotted") + theme_bw()
+```
+
+### Checking Acceptance Probability
+```{r accept}
+sampler_params <- get_sampler_params(tbayes, inc_warmup = FALSE)
+mean(unlist(lapply(sampler_params, function(x) x[, "accept_stat__"])))
+```
+
+### Computing Highest (Posterior) Density Intervals (HDI)
+```{r hdi}
+tsample <- rstan::extract(tbayes, pars = c("beta[1]","beta[2]","sigmae","phi1","D1[1,1]",
+                                    "D1[1,2]","D1[2,2]","lambda[1]","lambda[2]","nu"))
+HDI<- HDInterval::hdi(tsample) %>% unlist()
+data.frame(lower = HDI[c(TRUE, FALSE)],upper = HDI[c(FALSE, TRUE)]) %>% knitr::kable()
+```
+
+### Exploring the Posterior Distributions
+```{r posteriors}
+bayesplot::color_scheme_set("red")
+bayesplot::mcmc_rank_hist(tbayes, pars=c("beta[1]","beta[2]","phi1","lambda[1]","lambda[2]","nu"))
+```
+
+Additional exploration can be easily done by launching the shinny application using `launch_shinystan(tbayes)`.
+
+### Computing Information Criteria 
+
+To evaluate the marginal log-likelihood function, an approximation of Leave-One-Out Cross-Validation (LOO), and the Widely applicable information criterion (WAIC) for all MCMC samples, we can use the function `criteriaAR1`:
+
+```{r fit1criteria}
+source("auxfunctions-bayes.R")
+
+# ST Model LOO
+st_loo <- criteriaAR1(tbayes, data_list_stan, distr = "st")
+
+# Checking the Pareto smoothed importance sampling (PSIS)
+plot(st_loo$loo)
+```
+
+## Model comparison with a simpler, Gaussian model
+
+We compare the ST model against a standard Normal model.
+
+```{r fit2}
+# Normal Model Fitting
+tic("AR(1)-N-LMM Fit")
+nbayes <- stan(file = 'lmm-AR1-N.stan', 
+               data = list(N=N, n=n, l=l_cols, q1=q1_cols, njvec=njvec, 
+                           y=gendat$y, x=x_mat, z=z_mat, 
+                           timevar=gendat$time, ind=gendat$indnum), 
+               thin = 5, chains = 3, iter = 5000, warmup = 1000, seed = 9955)
+toc()
+
+# Computing the information criteria
+normal_loo <- criteriaAR1(nbayes, data_list_stan, distr = "sn")
+
+# Checking the Pareto smoothed importance sampling (PSIS)
+plot(normal_loo$loo)
+```
+
+### Comparing the models based on LOO
+```{r fit1loo}
+comp_loo <- loo_compare(list(ST = st_loo$loo, Normal = normal_loo$loo))
+knitr::kable(comp_loo, caption = "Model Comparison: LOO Criteria", simplify = FALSE)
+```
+
+### Comparing the models based on WAIC
+```{r fit1waic}
+comp_loo <- loo_compare(list(ST = st_loo$waic, Normal = normal_loo$waic))
+knitr::kable(comp_loo, caption = "Model Comparison: WAIC Criteria", simplify = FALSE)
+```
+
+## Sensitivity analysis: changing prior distribution for shape parameter
+
+To evaluate the model's sensitivity to the choice of the prior distribution for $\nu$, we now compare our original results based on a truncated Cauchy distribution with the ones considering a Gamma(2, 0.2) prior distribution for 
+$\nu$.
+```{r gammadist}
+tic("AR(1)-ST-LMM Fit with Gamma prior")
+tbayes_nu <- stan(file='lmm-AR1-ST-nuprior.stan', 
+                  data = list(N=N, n=n, l=l_cols, q1=q1_cols, njvec=njvec, 
+                           y=gendat$y, x=x_mat, z=z_mat, 
+                           timevar=gendat$time, ind=gendat$indnum, sdLP=2), 
+               thin = 5, chains = 3, iter = 5000, warmup = 1000, seed = 9955,
+               control = list(adapt_delta=.95))
+toc()
+print(tbayes_nu,par=c("beta","sigmae","phi1","D1","lambda","nu"), 
+      probs = c(.025,.975), digits=3)
+```
+
+
+```{r gammadistplot}
+## Comparing with original model
+posterior1 <- posterior::as_draws_matrix(tbayes)       
+posterior2 <- posterior::as_draws_matrix(tbayes_nu)    
+
+library(posterior)
+d1 <- as_draws_df(posterior1) |>
+  dplyr::select(nu, starts_with("beta")) |>
+  tidyr::pivot_longer(cols = everything(), names_to = "param",values_to="values") |>
+  dplyr::mutate(Model = "Cauchy Prior")
+d2 <- as_draws_df(posterior2) |>
+  dplyr::select(nu, starts_with("beta")) |>
+  pivot_longer(cols = everything(), names_to = "param",values_to="values") |>
+  dplyr::mutate(Model = "Gamma Prior")
+
+d <- dplyr::bind_rows(d1, d2)
+
+ggplot(d, aes(x = values, fill = Model)) +
+  geom_density(alpha = 0.4) +
+  ggtitle("Sensitivity of nu to Prior Choice") +
+  theme_minimal() + facet_wrap(~param, scale = "free")
+```
+
+
+## Frequentist Comparison (EM Algorithm)
+
+For validation, we compare our Bayesian estimates with the frequentist EM algorithm results.
+```{r emfit}
+tic("Frequentist Model")
+fit_EM <- smsn.lmm(data = gendat, formFixed = y~x, groupVar = 'ind', 
+                   formRandom = ~x, depStruct = "ARp", timeVar = 'time',
+                   distr = 'st')
+toc()
+summary(fit_EM)
+
+```

@@ -2875,7 +2875,7 @@ logveroARsind = function(y,x,z,time,ind,beta1,sigmae,phiAR,D1,distr,nu){ #ind = 
 #model comparison criteria
 #########################################################################
 
-criteriaAR1 <- function(stan_fit, data_list, distr = "st") {
+criteriaAR1 <- function(stan_fit, data_list, distr = "st", progress_bar = interactive()) {
   message("Extracting chains...")
   beta_chain   <- rstan::extract(stan_fit, pars = "beta",   permuted = FALSE)
   sigmae_chain <- rstan::extract(stan_fit, pars = "sigmae", permuted = FALSE)
@@ -2902,7 +2902,7 @@ criteriaAR1 <- function(stan_fit, data_list, distr = "st") {
   loglik_array <- array(dim = c(niter, nchains, n_subj))
   
   message(sprintf("Computing marginal log-likelihood for %d draws...", niter * nchains))
-  pb <- txtProgressBar(min = 0, max = niter, style = 3)
+  if (progress_bar) pb <- txtProgressBar(min = 0, max = niter, style = 3)
   
   if (!is.null(lambda_chain)) { #skewed
   for (i in seq_len(niter)) {
@@ -2927,7 +2927,7 @@ criteriaAR1 <- function(stan_fit, data_list, distr = "st") {
         nu     = current_nu
       )
     }
-    setTxtProgressBar(pb, i)
+    if (progress_bar) setTxtProgressBar(pb, i)
   }
   } else{ #symmetric
     library(mvtnorm)
@@ -2952,10 +2952,10 @@ criteriaAR1 <- function(stan_fit, data_list, distr = "st") {
           nu     = current_nu
         )
       }
-      setTxtProgressBar(pb, i)
+      if (progress_bar)  setTxtProgressBar(pb, i)
     }
   }
-  close(pb)
+  if (progress_bar) close(pb)
   # Reshape to [Total_Draws x Subjects] for 'loo'
   # This "piles" the chains as requested
   log_lik_matrix <- matrix(loglik_array, nrow = niter * nchains, ncol = n_subj)
