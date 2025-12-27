@@ -2,13 +2,13 @@
 title: "Supplementary Material: Bayesian estimation in scale mixture of skew-normal linear mixed models using Hamiltonian Monte Carlo"
 author: "Fernanda L Schumacher, Larissa A Matos, Pedro L Ramos, and   Francisco Louzada"
 output:
-  pdf_document:
-    toc: true
-    toc_depth: '2'
   html_document:
     toc: true
     toc_depth: 2
     theme: united
+  pdf_document:
+    toc: true
+    toc_depth: '2'
 ---
 
 ```{r setup, include=F, echo=T, results='hide'}
@@ -33,10 +33,9 @@ rstan_options(auto_write = TRUE)
 
 ## Introduction
 
-This document provides the full reproducible workflow for the simulation and estimation of the AR(1) Skew-t Linear Mixed Model (AR1-ST-LMM) discussed in the main text, in addition for comparisons with a Gaussian model and a brief sensitivity analysis for the degrees of freedom parameter $\nu$. All materials needed to reproduce this code are available at \url{https://github.com/fernandalschumacher/HMC-SMSN-LMM}.
+This document provides the full reproducible workflow for the simulation and estimation of the AR(1) Skew-t Linear Mixed Model (AR1-ST-LMM) discussed in the main text, in addition for comparisons with a Gaussian model and a brief sensitivity analysis for the degrees of freedom parameter $\nu$. All materials needed to reproduce this code are available at https://github.com/fernandalschumacher/HMC-SMSN-LMM.
 
-Stan is required for running this code. For information on installing Stan, please check
-\url{https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started#installation-of-rstan}.
+Stan is required for running this code. For information on installing Stan, please check https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started#installation-of-rstan.
 
 ## Loading packages
 
