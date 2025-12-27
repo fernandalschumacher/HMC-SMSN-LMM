@@ -2,6 +2,9 @@
 title: "Supplementary Material: Bayesian estimation in scale mixture of skew-normal linear mixed models using Hamiltonian Monte Carlo"
 author: "Fernanda L Schumacher, Larissa A Matos, Pedro L Ramos, and   Francisco Louzada"
 output:
+  github_document:
+    toc: true
+    toc_depth: 2
   html_document:
     toc: true
     toc_depth: 2
