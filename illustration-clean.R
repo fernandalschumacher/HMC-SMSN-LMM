@@ -116,6 +116,56 @@ comp_waic <- loo_compare(list(st = st_loo$waic, norm = normal_loo$waic))
 print(comp_waic, simplify = FALSE)
 
 ###############################################################################
+# Fitting SCN-AR(1) for comparison
+tic()
+cnbayes <- stan(file='lmm-AR1-SCN.stan', 
+               data = list(N=N, n=n, l=l, q1 = q1, njvec =njvec,y=gendat$y,
+                           x=x,z=z, timevar = gendat$time, ind = gendat$indnum,
+                           sdLP = 2), #sd of lambda's prior 
+               thin = 5, chains = 3, iter = 5000, warmup = 1000, 
+               seed = 9955, control = list(adapt_delta=.98))
+toc()
+print(cnbayes,par=c("beta","sigmae","phi1","D1","lambda","nu1","nu2"), 
+      probs = c(.025,.975), digits=3)
+
+tic()
+scn_loo <- criteriaAR1(cnbayes, data_list, distr = "scn")
+toc()
+plot(scn_loo$loo)
+
+###############################################################################
+# Fitting SSL-AR(1) for comparison
+tic()
+slbayes <- stan(file='lmm-AR1-SSL.stan', 
+                data = list(N=N, n=n, l=l, q1 = q1, njvec =njvec,y=gendat$y,
+                            x=x,z=z, timevar = gendat$time, ind = gendat$indnum,
+                            sdLP = 2), #sd of lambda's prior 
+                thin = 5, chains = 3, iter = 5000, warmup = 1000, 
+                seed = 9955, control = list(adapt_delta=.95))
+toc()
+print(slbayes,par=c("beta","sigmae","phi1","D1","lambda","nu"), 
+      probs = c(.025,.975), digits=3)
+
+tic()
+ssl_loo <- criteriaAR1(slbayes, data_list, distr = "ssl")
+toc()
+plot(ssl_loo$loo)
+
+###############################################################################
+# Comparing all models
+comp_loo <- loo_compare(list(norm = normal_loo$loo,
+                             st = st_loo$loo,
+                             scn = scn_loo$loo,
+                             ssl = ssl_loo$loo))
+print(comp_loo, simplify = FALSE)
+#
+comp_waic <- loo_compare(list(norm = normal_loo$waic,
+                              st = st_loo$waic, 
+                              scn = scn_loo$waic,
+                              ssl = ssl_loo$waic))
+print(comp_waic, simplify = FALSE)
+
+###############################################################################
 ## Sensitivity analysis: changing prior distribution for nu
 tic()
 tbayes_nu <- stan(file='lmm-AR1-ST-nuprior.stan', 
