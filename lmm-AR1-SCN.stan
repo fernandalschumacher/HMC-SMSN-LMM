@@ -78,8 +78,8 @@ model {
   Lcorr ~ lkj_corr_cholesky(2.0); // prior for cholesky factor of a correlation matrix
   to_vector(etavec) ~ std_normal();
   //
-  nu1 ~ beta(1, 4); // prior for probability
-  nu2 ~ beta(1, 4); // prior for scale factor
+  nu1 ~ beta(.5, 3); // prior for probability
+  nu2 ~ beta(.5, 3); // prior for scale factor
   //
   lambda ~ normal(0,sdLP);
   //

@@ -2888,10 +2888,16 @@ criteriaAR1 <- function(stan_fit, data_list, distr = "st", progress_bar = intera
   } else {
     NULL 
   }
-  nu_chain <- if ("nu" %in% all_pars) {
-    rstan::extract(stan_fit, pars = "nu", permuted = FALSE)
+  if (distr == "scn"|distr == "cn") {
+    nu1_chain <- rstan::extract(stan_fit, pars = "nu1", permuted = FALSE)
+    nu2_chain <- rstan::extract(stan_fit, pars = "nu2", permuted = FALSE)
+    nu_chain <- NULL
   } else {
-    NULL 
+    nu_chain <- if ("nu" %in% all_pars) {
+      rstan::extract(stan_fit, pars = "nu", permuted = FALSE)
+    } else {
+      NULL 
+    }
   }
   #
   niter   <- dim(beta_chain)[1]
@@ -2910,7 +2916,12 @@ criteriaAR1 <- function(stan_fit, data_list, distr = "st", progress_bar = intera
       # Extract D1 and ensure it's a matrix
       D1_mat <- matrix(D1_chain[i, j, ], ncol = ncol(data_list$z))
       # Other parameters that might be null
-      current_nu     <- if (!is.null(nu_chain))     nu_chain[i, j, ]     else NULL
+      if (distr == "scn") {
+        # extract() returns [iter, chain, par]
+        current_nu <- c(nu1_chain[i, j, ], nu2_chain[i, j, ])
+      } else {
+        current_nu <- if (!is.null(nu_chain)) nu_chain[i, j, ] else NULL
+      }
       
       loglik_array[i, j, ] <- logveroARind(
         y      = data_list$y, 
@@ -2936,7 +2947,12 @@ criteriaAR1 <- function(stan_fit, data_list, distr = "st", progress_bar = intera
         # Extract D1 and ensure it's a matrix
         D1_mat <- matrix(D1_chain[i, j, ], ncol = ncol(data_list$z))
         # Other parameters that might be null
-        current_nu     <- if (!is.null(nu_chain))     nu_chain[i, j, ]     else NULL
+        if (distr == "scn") {
+          # extract() returns [iter, chain, par]
+          current_nu <- c(nu1_chain[i, j, ], nu2_chain[i, j, ])
+        } else {
+          current_nu <- if (!is.null(nu_chain)) nu_chain[i, j, ] else NULL
+        }
         
         loglik_array[i, j, ] <- logveroARsind(
           y      = data_list$y, 

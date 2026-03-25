@@ -15,6 +15,7 @@ library(shinystan)
 library(HDInterval)
 library(bayesplot)
 library(tidyverse)
+library(mvtnorm)
 
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
@@ -115,23 +116,33 @@ print(comp_loo, simplify = FALSE)
 comp_waic <- loo_compare(list(st = st_loo$waic, norm = normal_loo$waic))
 print(comp_waic, simplify = FALSE)
 
+
 ###############################################################################
-# Fitting SCN-AR(1) for comparison
-tic()
-cnbayes <- stan(file='lmm-AR1-SCN.stan', 
-               data = list(N=N, n=n, l=l, q1 = q1, njvec =njvec,y=gendat$y,
-                           x=x,z=z, timevar = gendat$time, ind = gendat$indnum,
-                           sdLP = 2), #sd of lambda's prior 
-               thin = 5, chains = 3, iter = 5000, warmup = 1000, 
-               seed = 9955, control = list(adapt_delta=.98))
-toc()
-print(cnbayes,par=c("beta","sigmae","phi1","D1","lambda","nu1","nu2"), 
-      probs = c(.025,.975), digits=3)
+# Fitting approximated SCN-AR(1) for comparison
+my_inits <- list(
+  list(nu1 = 0.1, nu2 = 0.2, uvec = rep(1, n)),
+  list(nu1 = 0.15, nu2 = 0.15, uvec = rep(0.9, n)),
+  list(nu1 = 0.05, nu2 = 0.3, uvec = rep(1, n))
+)
 
 tic()
-scn_loo <- criteriaAR1(cnbayes, data_list, distr = "scn")
+acnbayes <- stan(file='lmm-AR1-aSCN.stan', 
+                data = list(N=N, n=n, l=l, q1 = q1, njvec =njvec,y=gendat$y,
+                            x=x,z=z, timevar = gendat$time, ind = gendat$indnum,
+                            sdLP = 2), #sd of lambda's prior 
+                thin = 5, chains = 3, iter = 5000, warmup = 1000, 
+                init = my_inits,
+                seed = 9955, control = list(adapt_delta=.98))
 toc()
-plot(scn_loo$loo)
+print(acnbayes,par=c("beta","sigmae","phi1","D1","lambda","nu1","nu2"), 
+      probs = c(.025,.975), digits=3)
+mcmc_trace(acnbayes, pars = c("nu1", "nu2"))
+mcmc_areas(acnbayes, pars = c("nu1", "nu2"), prob = 0.95)
+
+tic()
+ascn_loo <- criteriaAR1(acnbayes, data_list, distr = "scn")
+toc()
+plot(ascn_loo$loo)
 
 ###############################################################################
 # Fitting SSL-AR(1) for comparison
@@ -147,7 +158,7 @@ print(slbayes,par=c("beta","sigmae","phi1","D1","lambda","nu"),
       probs = c(.025,.975), digits=3)
 
 tic()
-ssl_loo <- criteriaAR1(slbayes, data_list, distr = "ssl")
+ssl_loo <- criteriaAR1(slbayes, data_list, distr = "ss")
 toc()
 plot(ssl_loo$loo)
 
@@ -155,13 +166,14 @@ plot(ssl_loo$loo)
 # Comparing all models
 comp_loo <- loo_compare(list(norm = normal_loo$loo,
                              st = st_loo$loo,
-                             scn = scn_loo$loo,
+                             scn = ascn_loo$loo,
                              ssl = ssl_loo$loo))
 print(comp_loo, simplify = FALSE)
+
 #
 comp_waic <- loo_compare(list(norm = normal_loo$waic,
                               st = st_loo$waic, 
-                              scn = scn_loo$waic,
+                              scn = ascn_loo$waic,
                               ssl = ssl_loo$waic))
 print(comp_waic, simplify = FALSE)
 
@@ -212,3 +224,9 @@ cbind(fit_EM$theta,fit_EM$std.error) %>% knitr::kable(digits = 3, format = 'simp
 round(fit_EM$estimates$D,3)
 round(fit_EM$estimates$sigma2 %>% sqrt,3)
 
+fit_EM_cn <- smsn.lmm(data = gendat, formFixed = y~x, groupVar = 'ind', 
+                   formRandom = ~x, depStruct = "ARp", timeVar = 'time',
+                   distr = 'scn', control = lmmControl(showCriterium = T))
+cbind(fit_EM_cn$theta,fit_EM_cn$std.error) %>% knitr::kable(digits = 3, format = 'simple')
+plot(fit_EM_cn)
+plot(fit_EM_cn$uhat)

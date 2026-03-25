@@ -158,9 +158,9 @@ st_loo <- criteriaAR1(tbayes, data_list_stan, distr = "st")
 plot(st_loo$loo)
 ```
 
-## Model comparison with a simpler, Gaussian model
+## Model comparison 
 
-We compare the ST model against a standard Normal model.
+We first compare the ST model against a standard Normal model.
 
 ```{r fit2}
 # Normal Model Fitting
@@ -190,6 +190,74 @@ knitr::kable(comp_loo, caption = "Model Comparison: LOO Criteria", simplify = FA
 comp_loo <- loo_compare(list(ST = st_loo$waic, Normal = normal_loo$waic))
 knitr::kable(comp_loo, caption = "Model Comparison: WAIC Criteria", simplify = FALSE)
 ```
+
+### Other skewed and heavy-tailed distribution
+
+Other potential candidates to fit skewed and heavy-tailed data is to use the Skew-Slash and the Skew-Contaminated Normal distributions. 
+
+We can estimate the skew-slash model using the following:
+```{r ssl}
+# Fitting SSL-AR(1) for comparison
+tic()
+slbayes <- stan(file='lmm-AR1-SSL.stan', 
+                data = list(N=N, n=n, l=l, q1 = q1, njvec =njvec,y=gendat$y,
+                            x=x,z=z, timevar = gendat$time, ind = gendat$indnum,
+                            sdLP = 2), #sd of lambda's prior 
+                thin = 5, chains = 3, iter = 5000, warmup = 1000, 
+                seed = 9955, control = list(adapt_delta=.95))
+toc()
+print(slbayes,par=c("beta","sigmae","phi1","D1","lambda","nu"), 
+      probs = c(.025,.975), digits=3)
+
+# Computing comparison criteria 
+ssl_loo <- criteriaAR1(slbayes, data_list, distr = "ss")
+```
+
+Now, for the skew-contaminated normal, since Stan cannot directly sample from discrete distributions, we will use an approximation by treating the subject-level mixing variable, $u_i$, as a continuous parameter drawn from a mixture of two narrow Gaussian distributions.
+To ensure convergence and computational efficiency, the HMC chains were initialized using fixed starting values. Specifically, the contamination probability ($\nu_1$) and scale parameter ($\nu_2$) were initialized to reflect a minority outlier class with inflated variance, while the subject-level latent weights ($u_i$) were initialized near 1.0. This targeted initialization prevents label switching, where the sampler incorrectly swaps the 'normal' and 'contaminated' states.
+
+```{r scn}
+# Setting initial values 
+my_inits <- list(
+  list(nu1 = 0.1, nu2 = 0.2, uvec = rep(1, n)),
+  list(nu1 = 0.15, nu2 = 0.15, uvec = rep(0.9, n)),
+  list(nu1 = 0.05, nu2 = 0.3, uvec = rep(1, n))
+)
+
+# Fitting aSCN-AR(1) for comparison
+tic()
+acnbayes <- stan(file='lmm-AR1-aSCN.stan', 
+                data = list(N=N, n=n, l=l, q1 = q1, njvec =njvec,y=gendat$y,
+                            x=x,z=z, timevar = gendat$time, ind = gendat$indnum,
+                            sdLP = 2), #sd of lambda's prior 
+                thin = 5, chains = 3, iter = 5000, warmup = 1000, 
+                init = my_inits,
+                seed = 9955, control = list(adapt_delta=.98))
+toc()
+print(acnbayes,par=c("beta","sigmae","phi1","D1","lambda","nu1","nu2"), 
+      probs = c(.025,.975), digits=3)
+
+# Computing comparison criteria 
+ascn_loo <- criteriaAR1(acnbayes, data_list, distr = "scn")
+```
+
+We can now compare the criteria for all 4 models:
+```{r comparing4}
+comp_loo <- loo_compare(list(norm = normal_loo$loo,
+                             st = st_loo$loo,
+                             scn = ascn_loo$loo,
+                             ssl = ssl_loo$loo))
+print(comp_loo, simplify = FALSE) 
+knitr::kable(comp_loo, caption = "Model Comparison: LOO Criteria", simplify = FALSE)
+
+#
+comp_waic <- loo_compare(list(norm = normal_loo$waic,
+                              st = st_loo$waic, 
+                              scn = ascn_loo$waic,
+                              ssl = ssl_loo$waic))
+knitr::kable(comp_waic, caption = "Model Comparison: WAIC Criteria", simplify = FALSE)
+```
+
 
 ## Sensitivity analysis: changing prior distribution for shape parameter
 
