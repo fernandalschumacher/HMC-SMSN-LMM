@@ -200,11 +200,11 @@ We can estimate the skew-slash model using the following:
 # Fitting SSL-AR(1) for comparison
 tic()
 slbayes <- stan(file='lmm-AR1-SSL.stan', 
-                data = list(N=N, n=n, l=l, q1 = q1, njvec =njvec,y=gendat$y,
-                            x=x,z=z, timevar = gendat$time, ind = gendat$indnum,
-                            sdLP = 2), #sd of lambda's prior 
-                thin = 5, chains = 3, iter = 5000, warmup = 1000, 
-                seed = 9955, control = list(adapt_delta=.95))
+                data = list(N=N, n=n, l=l_cols, q1=q1_cols, njvec=njvec, 
+                           y=gendat$y, x=x_mat, z=z_mat, 
+                           timevar=gendat$time, ind=gendat$indnum, sdLP=2), 
+               thin = 5, chains = 3, iter = 5000, warmup = 1000, seed = 9955, 
+               control = list(adapt_delta=.95))
 toc()
 print(slbayes,par=c("beta","sigmae","phi1","D1","lambda","nu"), 
       probs = c(.025,.975), digits=3)
@@ -227,10 +227,10 @@ my_inits <- list(
 # Fitting aSCN-AR(1) for comparison
 tic()
 acnbayes <- stan(file='lmm-AR1-aSCN.stan', 
-                data = list(N=N, n=n, l=l, q1 = q1, njvec =njvec,y=gendat$y,
-                            x=x,z=z, timevar = gendat$time, ind = gendat$indnum,
-                            sdLP = 2), #sd of lambda's prior 
-                thin = 5, chains = 3, iter = 5000, warmup = 1000, 
+                data = list(N=N, n=n, l=l_cols, q1=q1_cols, njvec=njvec, 
+                           y=gendat$y, x=x_mat, z=z_mat, 
+                           timevar=gendat$time, ind=gendat$indnum, sdLP=2), 
+                thin = 5, chains = 3, iter = 5000, warmup = 1000,
                 init = my_inits,
                 seed = 9955, control = list(adapt_delta=.98))
 toc()
