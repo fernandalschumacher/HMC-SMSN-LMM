@@ -28,10 +28,13 @@ library(bayesplot)
 library(HDInterval)
 library(skewlmm)
 library(bayesplot)
+library(mvtnorm)
 
 # Stan optimization
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
+
+source("auxfunctions-bayes.R")
 ```
 
 ## Introduction
@@ -40,7 +43,7 @@ This document provides the full reproducible workflow for the simulation and est
 
 Stan is required for running this code. For information on installing Stan, please check https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started#installation-of-rstan.
 
-## Loading packages
+## Loading packages and auxiliary functions 
 
 ```{r packages, eval=F}
 library(tictoc)
@@ -55,6 +58,9 @@ library(bayesplot)
 library(HDInterval)
 library(skewlmm)
 library(bayesplot)
+library(mvtnorm)
+
+source("auxfunctions-bayes.R")
 ```
 
 
@@ -149,8 +155,6 @@ Additional exploration can be easily done by launching the shinny application us
 To evaluate the marginal log-likelihood function, an approximation of Leave-One-Out Cross-Validation (LOO), and the Widely applicable information criterion (WAIC) for all MCMC samples, we can use the function `criteriaAR1`:
 
 ```{r fit1criteria}
-source("auxfunctions-bayes.R")
-
 # ST Model LOO
 st_loo <- criteriaAR1(tbayes, data_list_stan, distr = "st")
 
@@ -208,9 +212,12 @@ slbayes <- stan(file='lmm-AR1-SSL.stan',
 toc()
 print(slbayes,par=c("beta","sigmae","phi1","D1","lambda","nu"), 
       probs = c(.025,.975), digits=3)
+```
 
+
+```{r ssl_crit}
 # Computing comparison criteria 
-ssl_loo <- criteriaAR1(slbayes, data_list, distr = "ss")
+ssl_loo <- criteriaAR1(slbayes, data_list_stan, distr = "ss")
 ```
 
 Now, for the skew-contaminated normal, since Stan cannot directly sample from discrete distributions, we will use an approximation by treating the subject-level mixing variable, $u_i$, as a continuous parameter drawn from a mixture of two narrow Gaussian distributions.
@@ -236,9 +243,12 @@ acnbayes <- stan(file='lmm-AR1-aSCN.stan',
 toc()
 print(acnbayes,par=c("beta","sigmae","phi1","D1","lambda","nu1","nu2"), 
       probs = c(.025,.975), digits=3)
+```
 
+
+```{r scn_crit}
 # Computing comparison criteria 
-ascn_loo <- criteriaAR1(acnbayes, data_list, distr = "scn")
+ascn_loo <- criteriaAR1(acnbayes, data_list_stan, distr = "scn")
 ```
 
 We can now compare the criteria for all 4 models:
@@ -247,7 +257,6 @@ comp_loo <- loo_compare(list(norm = normal_loo$loo,
                              st = st_loo$loo,
                              scn = ascn_loo$loo,
                              ssl = ssl_loo$loo))
-print(comp_loo, simplify = FALSE) 
 knitr::kable(comp_loo, caption = "Model Comparison: LOO Criteria", simplify = FALSE)
 
 #

@@ -5,11 +5,11 @@ Fernanda L Schumacher, Larissa A Matos, Pedro L Ramos, and Francisco
 Louzada
 
 - [Introduction](#introduction)
-- [Loading packages](#loading-packages)
+- [Loading packages and auxiliary
+  functions](#loading-packages-and-auxiliary-functions)
 - [Data Generation](#data-generation)
 - [AR(1)-ST-LMM Fitting using Stan](#ar1-st-lmm-fitting-using-stan)
-- [Model comparison with a simpler, Gaussian
-  model](#model-comparison-with-a-simpler-gaussian-model)
+- [Model comparison](#model-comparison)
 - [Sensitivity analysis: changing prior distribution for shape
   parameter](#sensitivity-analysis-changing-prior-distribution-for-shape-parameter)
 - [Frequentist Comparison (EM
@@ -28,7 +28,7 @@ Stan is required for running this code. For information on installing
 Stan, please check
 <https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started#installation-of-rstan>.
 
-## Loading packages
+## Loading packages and auxiliary functions
 
 ``` r
 library(tictoc)
@@ -43,6 +43,9 @@ library(bayesplot)
 library(HDInterval)
 library(skewlmm)
 library(bayesplot)
+library(mvtnorm)
+
+source("auxfunctions-bayes.R")
 ```
 
 ## Data Generation
@@ -194,8 +197,6 @@ information criterion (WAIC) for all MCMC samples, we can use the
 function `criteriaAR1`:
 
 ``` r
-source("auxfunctions-bayes.R")
-
 # ST Model LOO
 st_loo <- criteriaAR1(tbayes, data_list_stan, distr = "st")
 
@@ -205,9 +206,9 @@ plot(st_loo$loo)
 
 ![](README_files/figure-gfm/fit1criteria-1.png)<!-- -->
 
-## Model comparison with a simpler, Gaussian model
+## Model comparison
 
-We compare the ST model against a standard Normal model.
+We first compare the ST model against a standard Normal model.
 
 ``` r
 # Normal Model Fitting
@@ -257,6 +258,163 @@ knitr::kable(comp_loo, caption = "Model Comparison: WAIC Criteria", simplify = F
 |:---|---:|---:|---:|---:|---:|---:|---:|---:|
 | ST | 0.00000 | 0.00000 | -1370.727 | 30.48860 | 6.202024 | 0.7303406 | 2741.455 | 60.97721 |
 | Normal | -82.48586 | 30.17448 | -1453.213 | 48.92392 | 8.799775 | 4.9826414 | 2906.426 | 97.84784 |
+
+Model Comparison: WAIC Criteria
+
+### Other skewed and heavy-tailed distribution
+
+Other potential candidates to fit skewed and heavy-tailed data is to use
+the Skew-Slash and the Skew-Contaminated Normal distributions.
+
+We can estimate the skew-slash model using the following:
+
+``` r
+# Fitting SSL-AR(1) for comparison
+tic()
+slbayes <- stan(file='lmm-AR1-SSL.stan', 
+                data = list(N=N, n=n, l=l_cols, q1=q1_cols, njvec=njvec, 
+                           y=gendat$y, x=x_mat, z=z_mat, 
+                           timevar=gendat$time, ind=gendat$indnum, sdLP=2), 
+               thin = 5, chains = 3, iter = 5000, warmup = 1000, seed = 9955, 
+               control = list(adapt_delta=.95))
+toc()
+```
+
+    ## 6064.97 sec elapsed
+
+``` r
+print(slbayes,par=c("beta","sigmae","phi1","D1","lambda","nu"), 
+      probs = c(.025,.975), digits=3)
+```
+
+    ## Inference for Stan model: anon_model.
+    ## 3 chains, each with iter=5000; warmup=1000; thin=5; 
+    ## post-warmup draws per chain=800, total post-warmup draws=2400.
+    ## 
+    ##            mean se_mean    sd   2.5% 97.5% n_eff  Rhat
+    ## beta[1]   0.896   0.001 0.067  0.768 1.030  2140 1.001
+    ## beta[2]   2.085   0.001 0.061  1.970 2.210  2147 1.000
+    ## sigmae    0.431   0.001 0.025  0.380 0.477   825 1.001
+    ## phi1      0.563   0.004 0.084  0.355 0.685   418 1.001
+    ## D1[1,1]   0.076   0.004 0.078  0.000 0.271   441 1.001
+    ## D1[1,2]   0.028   0.001 0.057 -0.082 0.149  1449 0.999
+    ## D1[2,1]   0.028   0.001 0.057 -0.082 0.149  1449 0.999
+    ## D1[2,2]   0.569   0.003 0.112  0.363 0.798  1375 1.001
+    ## lambda[1] 0.065   0.044 0.907 -1.783 1.975   426 1.004
+    ## lambda[2] 2.942   0.029 0.925  1.415 5.029  1029 1.000
+    ## nu        1.662   0.005 0.226  1.268 2.137  1838 1.001
+    ## 
+    ## Samples were drawn using NUTS(diag_e) at Wed Mar 25 18:32:53 2026.
+    ## For each parameter, n_eff is a crude measure of effective sample size,
+    ## and Rhat is the potential scale reduction factor on split chains (at 
+    ## convergence, Rhat=1).
+
+``` r
+# Computing comparison criteria 
+ssl_loo <- criteriaAR1(slbayes, data_list_stan, distr = "ss")
+```
+
+Now, for the skew-contaminated normal, since Stan cannot directly sample
+from discrete distributions, we will use an approximation by treating
+the subject-level mixing variable, $u_i$, as a continuous parameter
+drawn from a mixture of two narrow Gaussian distributions. To ensure
+convergence and computational efficiency, the HMC chains were
+initialized using fixed starting values. Specifically, the contamination
+probability ($\nu_1$) and scale parameter ($\nu_2$) were initialized to
+reflect a minority outlier class with inflated variance, while the
+subject-level latent weights ($u_i$) were initialized near 1.0. This
+targeted initialization prevents label switching, where the sampler
+incorrectly swaps the ‘normal’ and ‘contaminated’ states.
+
+``` r
+# Setting initial values 
+my_inits <- list(
+  list(nu1 = 0.1, nu2 = 0.2, uvec = rep(1, n)),
+  list(nu1 = 0.15, nu2 = 0.15, uvec = rep(0.9, n)),
+  list(nu1 = 0.05, nu2 = 0.3, uvec = rep(1, n))
+)
+
+# Fitting aSCN-AR(1) for comparison
+tic()
+acnbayes <- stan(file='lmm-AR1-aSCN.stan', 
+                data = list(N=N, n=n, l=l_cols, q1=q1_cols, njvec=njvec, 
+                           y=gendat$y, x=x_mat, z=z_mat, 
+                           timevar=gendat$time, ind=gendat$indnum, sdLP=2), 
+                thin = 5, chains = 3, iter = 5000, warmup = 1000,
+                init = my_inits,
+                seed = 9955, control = list(adapt_delta=.98))
+toc()
+```
+
+    ## 6968.04 sec elapsed
+
+``` r
+print(acnbayes,par=c("beta","sigmae","phi1","D1","lambda","nu1","nu2"), 
+      probs = c(.025,.975), digits=3)
+```
+
+    ## Inference for Stan model: anon_model.
+    ## 3 chains, each with iter=5000; warmup=1000; thin=5; 
+    ## post-warmup draws per chain=800, total post-warmup draws=2400.
+    ## 
+    ##            mean se_mean    sd   2.5% 97.5% n_eff  Rhat
+    ## beta[1]   0.893   0.001 0.066  0.766 1.023  2035 1.000
+    ## beta[2]   2.046   0.001 0.056  1.939 2.158  2343 1.000
+    ## sigmae    0.502   0.002 0.030  0.442 0.558   227 1.012
+    ## phi1      0.559   0.004 0.081  0.373 0.685   446 1.000
+    ## D1[1,1]   0.106   0.005 0.107  0.000 0.364   418 1.001
+    ## D1[1,2]   0.038   0.002 0.081 -0.129 0.208  1240 1.001
+    ## D1[2,1]   0.038   0.002 0.081 -0.129 0.208  1240 1.001
+    ## D1[2,2]   0.784   0.006 0.148  0.518 1.094   679 1.004
+    ## lambda[1] 0.058   0.057 0.870 -1.578 1.859   237 1.013
+    ## lambda[2] 3.012   0.033 0.902  1.504 5.072   755 1.001
+    ## nu1       0.264   0.007 0.087  0.124 0.450   173 1.020
+    ## nu2       0.348   0.003 0.050  0.243 0.443   359 1.012
+    ## 
+    ## Samples were drawn using NUTS(diag_e) at Wed Mar 25 20:59:32 2026.
+    ## For each parameter, n_eff is a crude measure of effective sample size,
+    ## and Rhat is the potential scale reduction factor on split chains (at 
+    ## convergence, Rhat=1).
+
+``` r
+# Computing comparison criteria 
+ascn_loo <- criteriaAR1(acnbayes, data_list_stan, distr = "scn")
+```
+
+We can now compare the criteria for all 4 models:
+
+``` r
+comp_loo <- loo_compare(list(norm = normal_loo$loo,
+                             st = st_loo$loo,
+                             scn = ascn_loo$loo,
+                             ssl = ssl_loo$loo))
+knitr::kable(comp_loo, caption = "Model Comparison: LOO Criteria", simplify = FALSE)
+```
+
+|  | elpd_diff | se_diff | elpd_loo | se_elpd_loo | p_loo | se_p_loo | looic | se_looic |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| st | 0.00000 | 0.000000 | -1370.738 | 30.48947 | 6.212676 | 0.7299541 | 2741.476 | 60.97893 |
+| scn | -26.26331 | 13.311856 | -1397.001 | 37.09305 | 14.925365 | 8.5440490 | 2794.003 | 74.18610 |
+| ssl | -34.77830 | 3.907916 | -1405.516 | 28.15291 | 5.508071 | 0.6924085 | 2811.033 | 56.30581 |
+| norm | -82.49983 | 30.191177 | -1453.238 | 48.94037 | 8.824400 | 5.0013610 | 2906.476 | 97.88074 |
+
+Model Comparison: LOO Criteria
+
+``` r
+#
+comp_waic <- loo_compare(list(norm = normal_loo$waic,
+                              st = st_loo$waic, 
+                              scn = ascn_loo$waic,
+                              ssl = ssl_loo$waic))
+knitr::kable(comp_waic, caption = "Model Comparison: WAIC Criteria", simplify = FALSE)
+```
+
+|  | elpd_diff | se_diff | elpd_waic | se_elpd_waic | p_waic | se_p_waic | waic | se_waic |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| st | 0.00000 | 0.000000 | -1370.727 | 30.48860 | 6.202024 | 0.7303406 | 2741.455 | 60.97721 |
+| scn | -26.79049 | 13.864238 | -1397.518 | 37.48060 | 15.441886 | 9.1062780 | 2795.036 | 74.96119 |
+| ssl | -34.78068 | 3.908358 | -1405.508 | 28.15277 | 5.499799 | 0.6959429 | 2811.016 | 56.30553 |
+| norm | -82.48586 | 30.174481 | -1453.213 | 48.92392 | 8.799775 | 4.9826414 | 2906.426 | 97.84784 |
 
 Model Comparison: WAIC Criteria
 
